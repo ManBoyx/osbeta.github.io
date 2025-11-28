@@ -1,0 +1,1504 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Simulation d'OS Mobile (Android-like) Avancée</title>
+    <!-- Chargement de Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        /* Configuration de la police Inter */
+        html {
+            font-family: 'Inter', sans-serif;
+        }
+
+        /* Conteneur de l'appareil (simule le téléphone) */
+        #device-container {
+            width: 100vw;
+            height: 100vh;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            background-color: #e5e7eb;
+            user-select: none;
+        }
+
+        /* L'écran réel de l'OS simulé */
+        #screen {
+            width: 375px;
+            height: 812px;
+            max-width: 100vw;
+            max-height: 100vh;
+            display: flex;
+            flex-direction: column;
+            overflow: hidden;
+            border-radius: 2rem;
+            box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.4);
+            background-color: #ffffff;
+            position: relative;
+            transition: background-color 0.3s, background-image 0.5s ease-in-out;
+            background-repeat: no-repeat;
+            background-position: center;
+            background-size: cover;
+        }
+
+        /* Styles pour les vues d'applications */
+        .app-view {
+            flex-grow: 1;
+            display: flex;
+            flex-direction: column;
+            overflow-y: auto;
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            transition: transform 0.3s ease-in-out;
+            transform: translateX(100%);
+            z-index: 50; /* Au-dessus de l'écran d'accueil */
+            /* La couleur de fond est gérée par JS (dark/light mode) */
+        }
+
+        .app-view.active {
+            transform: translateX(0);
+            z-index: 100;
+        }
+
+        /* Barre de navigation Android-like (Home/Back/Recents) */
+        #navbar {
+            height: 48px;
+            display: flex;
+            justify-content: space-around;
+            align-items: center;
+            border-top: 1px solid rgba(255, 255, 255, 0.05);
+            z-index: 200;
+            flex-shrink: 0;
+            background-color: var(--navbar-bg-color);
+        }
+
+        /* Zone de contenu principale (sans barre d'état ni barre de navigation) */
+        #content-area {
+            flex-grow: 1;
+            overflow: hidden;
+            position: relative;
+        }
+
+        /* Barre de notification/statut en haut */
+        #status-bar {
+            height: 24px;
+            padding: 0 1rem;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            font-size: 0.75rem;
+            z-index: 150;
+            flex-shrink: 0;
+            color: var(--status-bar-color);
+            background-color: var(--status-bar-bg-color);
+        }
+
+        /* Variable CSS pour le mode sombre/clair et les fonds d'écran */
+        #screen[data-theme='dark'] {
+            --primary-text-color: #ffffff;
+            --secondary-text-color: #9ca3af; /* gray-400 */
+            --bg-color: #1f2937; /* gray-800 */
+            --surface-color: #374151; /* gray-700 */
+            --surface-hover-color: #4b5563; /* gray-600 */
+            --status-bar-color: #ffffff;
+            --status-bar-bg-color: transparent;
+            --navbar-bg-color: rgba(31, 41, 55, 0.8);
+        }
+
+        #screen[data-theme='light'] {
+            --primary-text-color: #1f2937; /* gray-800 */
+            --secondary-text-color: #6b7280; /* gray-500 */
+            --bg-color: #ffffff;
+            --surface-color: #f3f4f6; /* gray-100 */
+            --surface-hover-color: #e5e7eb; /* gray-200 */
+            --status-bar-color: #1f2937; /* Texte noir par défaut en mode clair, sera ajusté par applyWallpaper */
+            --status-bar-bg-color: transparent;
+            --navbar-bg-color: rgba(255, 255, 255, 0.8);
+        }
+
+        /* Assurer que le fond d'écran n'est visible que sur l'écran d'accueil */
+        #home-screen {
+            background-color: transparent !important;
+        }
+
+        /* Appliquer les couleurs de thème aux vues d'applications et à la barre */
+        .app-view {
+            background-color: var(--bg-color);
+            color: var(--primary-text-color);
+        }
+        .app-view > div {
+             background-color: var(--bg-color);
+             border-color: var(--surface-hover-color);
+        }
+        
+        /* Style pour l'indicateur de chargement du navigateur */
+        .spinner {
+            border: 4px solid rgba(0, 0, 0, 0.1);
+            border-top: 4px solid #3b82f6;
+            border-radius: 50%;
+            width: 24px;
+            height: 24px;
+            animation: spin 1s linear infinite;
+        }
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+    </style>
+</head>
+<body class="p-0 m-0">
+    <div id="device-container">
+        <div id="screen" data-theme="light">
+            <!-- Barre de statut -->
+            <div id="status-bar">
+                <span id="status-time">00:00</span>
+                <div>
+                    <span id="status-notifications" class="mr-2">🔔</span>
+                    <span>📶 🔋</span>
+                </div>
+            </div>
+
+            <!-- Zone de contenu -->
+            <div id="content-area">
+                <!-- VUE D'APPLICATION: Écran d'accueil -->
+                <div id="home-screen" class="app-view active p-4 flex flex-col justify-between">
+                    <!-- Section Recherche/Widgets (en haut) -->
+                    <div class="flex justify-center mt-8">
+                        <div class="bg-white/20 backdrop-blur-md rounded-full px-4 py-2 w-4/5 text-center text-sm text-gray-100 shadow-xl">
+                            Rechercher dans l'OS...
+                        </div>
+                    </div>
+
+                    <!-- Section Icônes (en bas, Dock) -->
+                    <div id="home-icons" class="grid grid-cols-4 gap-4 pb-4">
+                        <!-- Icône: NOTES -->
+                        <div class="flex flex-col items-center cursor-pointer" onclick="navigateToApp('notes')">
+                            <div class="w-12 h-12 bg-yellow-400 rounded-xl shadow-lg flex items-center justify-center">
+                                <svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6 text-yellow-900" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+                                    <path stroke-linecap="round" stroke-linejoin="round" d="M9 12h6m-6 4h6m-5 3h4M12 21V3"/>
+                                    <path stroke-linecap="round" stroke-linejoin="round" d="M12 4.5V1.5m0 21v-3"/>
+                                    <path stroke-linecap="round" stroke-linejoin="round" d="M16 4h2a2 2 0 012 2v12a2 2 0 01-2 2h-2M8 4H6a2 2 0 00-2 2v12a2 2 0 002 2h2"/>
+                                </svg>
+                            </div>
+                            <span class="mt-1 text-xs text-white drop-shadow-md">Notes</span>
+                        </div>
+                        
+                        <!-- Icône: NAVIGATEUR -->
+                        <div class="flex flex-col items-center cursor-pointer" onclick="navigateToApp('browser')">
+                             <div class="w-12 h-12 bg-blue-600 rounded-xl shadow-lg flex items-center justify-center">
+                                <svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+                                    <path stroke-linecap="round" stroke-linejoin="round" d="M21 12a9 9 0 01-9 9m9-9a9 9 0 00-9-9m9 9H3m9 9a9 9 0 01-9-9m9 9c1.657 0 3-4.033 3-9s-1.343-9-3-9m0 18c-1.657 0-3-4.033-3-9s1.343-9 3-9m-9 9h6"/>
+                                </svg>
+                            </div>
+                            <span class="mt-1 text-xs text-white drop-shadow-md">Navigateur</span>
+                        </div>
+                        
+                        <!-- Icône: FICHIERS (NOUVEAU) -->
+                        <div class="flex flex-col items-center cursor-pointer" onclick="navigateToApp('files')">
+                            <div class="w-12 h-12 bg-green-500 rounded-xl shadow-lg flex items-center justify-center">
+                                <svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+                                    <path stroke-linecap="round" stroke-linejoin="round" d="M3 7v10a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-6l-2-2H5a2 2 0 00-2 2z" />
+                                </svg>
+                            </div>
+                            <span class="mt-1 text-xs text-white drop-shadow-md">Fichiers</span>
+                        </div>
+                        
+                        <!-- Icône: APPELS (NOUVEAU) -->
+                        <div class="flex flex-col items-center cursor-pointer" onclick="navigateToApp('phone')">
+                            <div class="w-12 h-12 bg-indigo-500 rounded-xl shadow-lg flex items-center justify-center">
+                                <svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+                                    <path stroke-linecap="round" stroke-linejoin="round" d="M3 5a2 2 0 012-2h3.28a1 1 0 01.948.684l1.498 4.493a1 1 0 01-.502 1.21l-2.257 1.13a11.042 11.042 0 005.516 5.516l1.13-2.257a1 1 0 011.21-.502l4.493 1.498a1 1 0 01.684.949V19a2 2 0 01-2 2h-1C9.716 21 3 14.284 3 6V5z" />
+                                </svg>
+                            </div>
+                            <span class="mt-1 text-xs text-white drop-shadow-md">Appels</span>
+                        </div>
+
+                        <!-- Icône: PARAMÈTRES -->
+                        <div class="flex flex-col items-center cursor-pointer" onclick="navigateToApp('settings')">
+                            <div class="w-12 h-12 bg-gray-500 rounded-xl shadow-lg flex items-center justify-center">
+                                <svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+                                    <path stroke-linecap="round" stroke-linejoin="round" d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z" />
+                                    <path stroke-linecap="round" stroke-linejoin="round" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
+                                </svg>
+                            </div>
+                            <span class="mt-1 text-xs text-white drop-shadow-md">Paramètres</span>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- VUE D'APPLICATION: APPELS (NOUVEAU) -->
+                <div
+                    id="app-phone"
+                    data-app-id="phone"
+                    class="app-view hidden"
+                >
+                    <div class="p-4 border-b sticky top-0 z-10">
+                        <h2 class="text-xl font-bold">Téléphone</h2>
+                        <p class="text-sm text-gray-500 dark:text-gray-400">Journal d'appels simulé.</p>
+                    </div>
+                    <div class="p-4 flex flex-col space-y-3">
+                        <div class="p-3 bg-gray-100 dark:bg-gray-700 rounded-xl shadow flex justify-between items-center">
+                            <div>
+                                <h4 class="font-semibold text-lg">Jane Doe</h4>
+                                <p class="text-xs text-red-500">Appel manqué</p>
+                            </div>
+                            <span class="text-xs text-gray-500">10:30 AM</span>
+                        </div>
+                        <div class="p-3 bg-gray-100 dark:bg-gray-700 rounded-xl shadow flex justify-between items-center">
+                            <div>
+                                <h4 class="font-semibold text-lg">Support Technique</h4>
+                                <p class="text-xs text-green-500">Appel sortant</p>
+                            </div>
+                            <span class="text-xs text-gray-500">Hier</span>
+                        </div>
+                        <div class="p-3 bg-gray-100 dark:bg-gray-700 rounded-xl shadow flex justify-between items-center">
+                            <div>
+                                <h4 class="font-semibold text-lg">Google</h4>
+                                <p class="text-xs text-green-500">Appel entrant</p>
+                            </div>
+                            <span class="text-xs text-gray-500">24/11/2025</span>
+                        </div>
+                        <div class="p-3 bg-gray-100 dark:bg-gray-700 rounded-xl shadow text-center text-gray-500 dark:text-gray-400">
+                             Simulateur d'Appel non fonctionnel.
+                        </div>
+                    </div>
+                </div>
+
+                <!-- VUE D'APPLICATION: FICHIERS (NOUVEAU) -->
+                <div
+                    id="app-files"
+                    data-app-id="files"
+                    class="app-view hidden"
+                >
+                    <div class="p-4 border-b sticky top-0 z-10 flex flex-col">
+                        <h2 class="text-xl font-bold">Gestionnaire de Fichiers</h2>
+                        <p class="text-xs text-gray-500 dark:text-gray-400" id="current-path-display">Chemin: /</p>
+                    </div>
+                    
+                    <!-- Zone de navigation des fichiers -->
+                    <div id="file-list-container" class="flex flex-col flex-grow overflow-y-auto">
+                        <!-- Les dossiers et fichiers seront injectés ici -->
+                        <!-- Bouton de retour/dossier parent -->
+                        <div id="parent-folder-button" onclick="navigateBackFile()"
+                             class="flex items-center p-4 border-b cursor-pointer hover:bg-surface-hover-color transition hidden">
+                            <svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6 text-blue-500 mr-3" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+                                <path stroke-linecap="round" stroke-linejoin="round" d="M11 17l-5-5m0 0l5-5m-5 5h12" />
+                            </svg>
+                            <span class="font-semibold text-sm">... Dossier Parent</span>
+                        </div>
+                        <div id="file-list">
+                            <!-- Les fichiers et dossiers seront injectés ici par JS -->
+                        </div>
+                    </div>
+
+                    <!-- Vue de contenu du fichier (cachée par défaut) -->
+                    <div id="file-content-view" class="hidden absolute inset-0 z-20 bg-black/50 backdrop-blur-sm flex items-center justify-center p-4">
+                         <div class="bg-white dark:bg-gray-800 p-4 rounded-xl shadow-2xl w-full h-full flex flex-col">
+                            <div class="flex justify-between items-center mb-3 border-b pb-2">
+                                <h3 class="text-lg font-semibold truncate" id="file-content-title">Titre du fichier</h3>
+                                <button
+                                    onclick="hideFileContent()"
+                                    class="p-2 text-gray-600 dark:text-gray-300 rounded-full hover:bg-gray-100 dark:hover:bg-gray-700 transition"
+                                >
+                                    <svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+                                        <path stroke-linecap="round" stroke-linejoin="round" d="M6 18L18 6M6 6l12 12" />
+                                    </svg>
+                                </button>
+                            </div>
+                            <div class="flex-grow overflow-y-auto whitespace-pre-wrap p-2 bg-gray-50 dark:bg-gray-700 rounded-lg text-sm">
+                                <code id="file-content-text">Contenu du fichier...</code>
+                            </div>
+                        </div>
+                    </div>
+
+                </div>
+
+
+                <!-- VUE D'APPLICATION: NAVIGATEUR (Contenu de la réponse précédente) -->
+                <div
+                    id="app-browser"
+                    data-app-id="browser"
+                    class="app-view hidden"
+                >
+                    <div class="p-4 border-b sticky top-0 z-10 flex flex-col">
+                        <h2 class="text-xl font-bold">Navigateur Gemini</h2>
+                        <p class="text-xs text-gray-500 dark:text-gray-400">Recherche alimentée par Gemini et Google Search.</p>
+                    </div>
+                    
+                    <div class="p-4 flex flex-col space-y-4 overflow-y-auto">
+                        <!-- Champ de saisie et Bouton de Recherche -->
+                        <div class="flex gap-2">
+                            <!-- NOTE: L'écouteur 'onkeydown' a été retiré et est maintenant géré par setupBrowserListeners() -->
+                            <input type="text" id="browser-query-input" placeholder="Entrez votre requête de recherche..."
+                                   class="flex-grow p-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 dark:border-gray-600 dark:bg-gray-700 dark:text-white">
+
+                            <button id="browser-search-button"
+                                    class="flex-shrink-0 bg-blue-600 text-white font-semibold p-2 rounded-lg hover:bg-blue-700 active:bg-blue-800 transition shadow-md">
+                                <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"></path></svg>
+                            </button>
+                        </div>
+                        
+                        <!-- Zone d'affichage des messages (chargement/erreur) -->
+                        <div id="browser-message-area" class="text-center text-sm font-medium h-6">
+                            <!-- Les messages de chargement ou d'erreur s'afficheront ici -->
+                        </div>
+                        
+                        <!-- Zone de Résultats -->
+                        <div id="browser-results-area" class="hidden border-t border-gray-200 dark:border-gray-700 pt-4">
+                            <h3 class="text-lg font-bold text-gray-800 dark:text-gray-100 mb-2">Réponse</h3>
+                            <div id="browser-response-text" class="text-gray-700 dark:text-gray-300 leading-relaxed mb-4 p-3 bg-gray-50 dark:bg-gray-700/50 rounded-lg shadow-inner text-sm">
+                                <!-- Le texte généré par Gemini s'affichera ici -->
+                            </div>
+
+                            <h4 class="text-md font-semibold text-gray-700 dark:text-gray-300 mb-2">Sources (Vérification)</h4>
+                            <ul id="browser-sources-list" class="space-y-1 text-xs text-blue-600 dark:text-blue-400">
+                                <!-- Les citations de la recherche Google s'affichera ici -->
+                            </ul>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- VUE D'APPLICATION: NOTES -->
+                <div
+                    id="app-notes"
+                    data-app-id="notes"
+                    class="app-view hidden bg-gray-50 dark:bg-gray-900"
+                >
+                    <div class="p-4 border-b sticky top-0 z-10 flex justify-between items-center">
+                        <h2 class="text-xl font-bold">Notes</h2>
+                        <button
+                            onclick="showNoteEditor()"
+                            class="bg-blue-600 text-white p-2 rounded-full shadow-lg hover:bg-blue-500 active:bg-blue-700 transition"
+                            title="Ajouter une note"
+                        >
+                            <svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+                                <path stroke-linecap="round" stroke-linejoin="round" d="M12 4v16m8-8H4" />
+                            </svg>
+                        </button>
+                    </div>
+
+                    <!-- Liste des notes -->
+                    <div id="notes-list" class="flex flex-col p-4 space-y-3 flex-grow overflow-y-auto">
+                        <!-- Les notes seront injectées ici -->
+                    </div>
+
+                    <!-- Éditeur de Note (caché par défaut) -->
+                    <div id="note-editor-modal" class="hidden absolute inset-0 z-20 bg-black/50 backdrop-blur-sm flex items-center justify-center">
+                        <div class="bg-white dark:bg-gray-800 p-4 rounded-xl shadow-2xl w-11/12 max-h-5/6 flex flex-col">
+                            <h3 class="text-lg font-semibold mb-3" id="note-editor-title">Nouvelle Note</h3>
+                            <input
+                                type="text"
+                                id="note-editor-input-title"
+                                placeholder="Titre de la note"
+                                class="w-full p-2 mb-3 rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:ring-blue-500 focus:border-blue-500"
+                            />
+                            <textarea
+                                id="note-editor-input-content"
+                                placeholder="Contenu de la note..."
+                                rows="8"
+                                class="w-full p-2 mb-4 rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-900 dark:text-white resize-none flex-grow"
+                            ></textarea>
+
+                            <div class="flex justify-end space-x-2">
+                                <button
+                                    onclick="hideNoteEditor()"
+                                    class="px-4 py-2 text-gray-600 dark:text-gray-300 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-700 transition"
+                                >
+                                    Annuler
+                                </button>
+                                <button
+                                    onclick="saveNote()"
+                                    class="px-4 py-2 bg-blue-600 text-white rounded-lg font-semibold hover:bg-blue-500 active:bg-blue-700 transition"
+                                >
+                                    Enregistrer
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- VUE D'APPLICATION: PARAMÈTRES (Contenu du prompt) -->
+                <div
+                    id="app-settings"
+                    data-app-id="settings"
+                    class="app-view hidden"
+                >
+                    <div class="p-4 border-b sticky top-0 z-10">
+                        <h2 class="text-xl font-bold">Paramètres</h2>
+                        <p class="text-sm text-gray-500 dark:text-gray-400">Gérez les préférences du simulateur.</p>
+                    </div>
+                    <ul class="divide-y divide-gray-200 dark:divide-gray-700">
+                        <li
+                            class="flex justify-between items-center p-4"
+                        >
+                            <span>Mode Sombre</span>
+                            <label
+                                class="relative inline-flex items-center cursor-pointer"
+                            >
+                                <input
+                                    type="checkbox"
+                                    id="setting-dark-mode"
+                                    class="sr-only peer"
+                                    onchange="handleSettingChange('darkMode', this.checked)"
+                                />
+                                <div
+                                    class="w-11 h-6 bg-gray-600 peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-blue-300 dark:peer-focus:ring-blue-800 rounded-full peer dark:bg-gray-700 peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border after:border-gray-300 after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-blue-600"
+                                ></div>
+                            </label>
+                        </li>
+                        <li
+                            class="flex justify-between items-center p-4"
+                        >
+                            <span>Notifications Actives</span>
+                            <label
+                                class="relative inline-flex items-center cursor-pointer"
+                            >
+                                <input
+                                    type="checkbox"
+                                    id="setting-notifications"
+                                    class="sr-only peer"
+                                    checked
+                                    onchange="handleSettingChange('notifications', this.checked)"
+                                />
+                                <div
+                                    class="w-11 h-6 bg-gray-600 peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-blue-300 dark:peer-focus:ring-blue-800 rounded-full peer dark:bg-gray-700 peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border after:border-gray-300 after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-blue-600"
+                                ></div>
+                            </label>
+                        </li>
+                        <!-- La section fonds d'écran sera insérée ici par JS -->
+                        <div id="wallpaper-settings-container"></div>
+
+                        <li
+                            class="flex flex-col p-4"
+                        >
+                            <span
+                                class="font-semibold mb-1"
+                                >ID Utilisateur (Firestore)</span
+                            >
+                            <code
+                                id="user-id-display"
+                                class="text-xs break-all text-gray-500 dark:text-gray-400"
+                                >Chargement...</code
+                            >
+                        </li>
+                         <li
+                            class="flex justify-between items-center p-4"
+                        >
+                            <span>Réinitialiser les données des applications</span>
+                            <button
+                                onclick="showConfirmReset()"
+                                class="bg-red-600 text-white text-sm font-semibold px-3 py-1 rounded-lg hover:bg-red-500 active:bg-red-700 transition"
+                            >
+                                Réinitialiser
+                            </button>
+                        </li>
+                    </ul>
+                </div>
+            </div>
+
+            <!-- Barre de navigation Home/Back -->
+            <div id="navbar">
+                <button onclick="navigateBack()" class="p-2 rounded-full active:bg-gray-700/50">
+                    <!-- Flèche arrière (icône pour "Back") -->
+                    <svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2" style="color: var(--primary-text-color)">
+                        <path stroke-linecap="round" stroke-linejoin="round" d="M10 19l-7-7m0 0l7-7m-7 7h18" />
+                    </svg>
+                </button>
+                <button onclick="navigateToApp('home')" class="p-2 rounded-full active:bg-gray-700/50">
+                    <!-- Cercle (icône pour "Home") -->
+                    <svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor" fill="none" stroke-linecap="round" stroke-linejoin="round" style="color: var(--primary-text-color)">
+                        <circle cx="12" cy="12" r="10" />
+                    </svg>
+                </button>
+                <button onclick="displayMessage('Recents', 'Fonctionnalité non implémentée.', 'info')" class="p-2 rounded-full active:bg-gray-700/50">
+                    <!-- Carré (icône pour "Recents") -->
+                    <svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2" style="color: var(--primary-text-color)">
+                        <path stroke-linecap="round" stroke-linejoin="round" d="M4 6h16M4 12h16m-7 6h7" />
+                    </svg>
+                </button>
+            </div>
+
+            <!-- Toast/Message Box -->
+            <div id="message-box" class="fixed bottom-14 left-1/2 -translate-x-1/2 p-3 rounded-lg shadow-xl text-sm transition-opacity duration-300 opacity-0 pointer-events-none z-50"></div>
+            
+            <!-- Modal de confirmation de réinitialisation -->
+            <div id="reset-confirm-modal" class="hidden fixed inset-0 z-[999] bg-black/50 backdrop-blur-sm flex items-center justify-center">
+                <div class="bg-white dark:bg-gray-800 p-6 rounded-xl shadow-2xl w-10/12 max-w-sm">
+                    <h4 class="text-xl font-bold mb-3 text-red-600">Confirmation</h4>
+                    <p class="text-gray-700 dark:text-gray-300 mb-6">Êtes-vous sûr de vouloir réinitialiser toutes les données de l'application (Notes et Paramètres)? Cette action est irréversible.</p>
+                    <div class="flex justify-end space-x-3">
+                        <button
+                            onclick="hideConfirmReset()"
+                            class="px-4 py-2 text-gray-600 dark:text-gray-300 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-700 transition"
+                        >
+                            Annuler
+                        </button>
+                        <button
+                            onclick="resetAppData(); hideConfirmReset();"
+                            class="px-4 py-2 bg-red-600 text-white rounded-lg font-semibold hover:bg-red-500 active:bg-red-700 transition"
+                        >
+                            Confirmer
+                        </button>
+                    </div>
+                </div>
+            </div>
+
+        </div>
+    </div>
+
+    <script type="module">
+        // Importations Firebase
+        import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
+        import { getAuth, signInAnonymously, signInWithCustomToken, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
+        import {
+            getFirestore, doc, setDoc, deleteDoc, onSnapshot, collection, query, addDoc, updateDoc, getDoc, getDocs,
+            serverTimestamp, setLogLevel, writeBatch
+        } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
+
+        // Définition des variables globales fournies par l'environnement
+        const appId = typeof __app_id !== 'undefined' ? __app_id : 'default-os-sim';
+        const firebaseConfig = typeof __firebase_config !== 'undefined' ? JSON.parse(__firebase_config) : null;
+        const initialAuthToken = typeof __initial_auth_token !== 'undefined' ? __initial_auth_token : null;
+        
+        // Configuration de l'API pour le Navigateur
+        const browserApiUrl = "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-preview-09-2025:generateContent?key=";
+        const browserApiKey = ""; // La clé API sera fournie automatiquement en runtime si elle est vide
+
+        let app, db, auth;
+        let userId = null;
+        let unsubscribeNotes = null;
+
+        // État central de l'OS
+        let osState = {
+            currentApp: 'home',
+            appData: {
+                settings: {
+                    darkMode: true,
+                    notifications: true,
+                    wallpaper: 'default',
+                },
+                notes: [], // Cache local pour les notes
+            },
+        };
+        
+        // --- DONNÉES SIMULÉES POUR LE GESTIONNAIRE DE FICHIERS ---
+        const fileSystem = {
+            'Documents': {
+                type: 'folder',
+                content: {
+                    'rapport-q4.pdf': { type: 'file', content: 'Ceci est un document PDF simulé. Le contenu est textuel pour l\'affichage.' },
+                    'todo.txt': { type: 'file', content: 'Liste de tâches:\n- Ajouter l\'appli Calendrier\n- Améliorer le mode sombre.' },
+                }
+            },
+            'Photos': {
+                type: 'folder',
+                content: {
+                    'vacances-2024.jpg': { type: 'file', content: 'Ceci est un fichier image simulé. L\'OS ne prend pas en charge l\'affichage d\'images réelles ici.' },
+                    'profil.png': { type: 'file', content: 'Fichier PNG de profil.' },
+                }
+            },
+            'System': {
+                type: 'folder',
+                content: {
+                    'kernel.log': { type: 'file', content: 'Démarrage du système à [09:00:00].\nChargement du pilote display.sys...' },
+                    'readme.md': { type: 'file', content: '# Bienvenue dans l\'OS\nCe système de fichiers est purement simulé.' },
+                }
+            },
+            'Musique.mp3': { type: 'file', content: 'Fichier audio simulé (non jouable).' },
+        };
+        
+        // Chemin de navigation actuel pour l'application Fichiers.
+        let currentFilePath = []; 
+
+
+        // --- NOUVELLES FONCTIONS DE GESTION DE FICHIERS ---
+
+        /**
+         * Navigue dans le système de fichiers.
+         * @param {string} name - Nom du dossier ou fichier à ouvrir.
+         */
+        function navigateToFile(name) {
+            const currentDir = getCurrentDirectory(currentFilePath);
+            const item = currentDir.content[name];
+
+            if (!item) {
+                displayMessage('Fichiers', `Erreur: ${name} introuvable.`, 'error');
+                return;
+            }
+
+            if (item.type === 'folder') {
+                currentFilePath.push(name);
+                updateFilesUI();
+            } else if (item.type === 'file') {
+                showFileContent(name, item.content);
+            }
+        }
+
+        /**
+         * Remonte au dossier parent.
+         */
+        function navigateBackFile() {
+            if (currentFilePath.length > 0) {
+                currentFilePath.pop();
+                updateFilesUI();
+            } else {
+                displayMessage('Fichiers', 'Déjà à la racine.', 'info');
+            }
+        }
+        
+        /**
+         * Récupère le contenu du répertoire actuel à partir du chemin.
+         * @param {string[]} pathArray - Le tableau de chemin.
+         * @returns {object} L'objet répertoire actuel.
+         */
+        function getCurrentDirectory(pathArray) {
+            let current = { type: 'folder', content: fileSystem };
+            for (const name of pathArray) {
+                current = current.content[name];
+                if (!current || current.type !== 'folder') {
+                    // Revenir à la racine si le chemin est corrompu
+                    currentFilePath = [];
+                    return { type: 'folder', content: fileSystem };
+                }
+            }
+            return current;
+        }
+
+        /**
+         * Met à jour l'interface utilisateur du gestionnaire de fichiers.
+         */
+        function updateFilesUI() {
+            const fileListEl = document.getElementById('file-list');
+            const pathDisplayEl = document.getElementById('current-path-display');
+            const backButtonEl = document.getElementById('parent-folder-button');
+            if (!fileListEl || !pathDisplayEl || !backButtonEl) return;
+
+            fileListEl.innerHTML = '';
+            
+            // Récupérer le répertoire actuel
+            const currentDir = getCurrentDirectory(currentFilePath);
+            
+            // Afficher le chemin
+            pathDisplayEl.textContent = `Chemin: /${currentFilePath.join('/')}`;
+            
+            // Afficher le bouton de retour si on n'est pas à la racine
+            backButtonEl.classList.toggle('hidden', currentFilePath.length === 0);
+
+
+            // Obtenir les noms et les trier (dossiers avant fichiers, puis par ordre alphabétique)
+            const items = Object.entries(currentDir.content);
+            items.sort(([nameA, itemA], [nameB, itemB]) => {
+                // Dossiers d'abord
+                if (itemA.type === 'folder' && itemB.type !== 'folder') return -1;
+                if (itemA.type !== 'folder' && itemB.type === 'folder') return 1;
+                // Puis par nom
+                return nameA.localeCompare(nameB);
+            });
+
+            // Afficher les éléments
+            items.forEach(([name, item]) => {
+                const isFolder = item.type === 'folder';
+                const icon = isFolder 
+                    ? `<svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6 text-yellow-500 flex-shrink-0 mr-3" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M3 7v10a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-6l-2-2H5a2 2 0 00-2 2z" /></svg>`
+                    : `<svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6 text-gray-500 dark:text-gray-400 flex-shrink-0 mr-3" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M9 12h6m-6 4h6m-5 3h4M12 21V3" /></svg>`;
+                
+                const size = isFolder ? `${Object.keys(item.content).length} éléments` : '1 KB'; // Taille simulée
+
+                const itemEl = document.createElement('div');
+                itemEl.className = 'flex items-center p-4 border-b border-surface-hover-color cursor-pointer hover:bg-surface-hover-color/50 transition';
+                itemEl.setAttribute('onclick', `MapsToFile('${name.replace(/'/g, "\\'")}')`); // Gérer les noms avec quotes
+
+                itemEl.innerHTML = `
+                    ${icon}
+                    <div class="flex-grow min-w-0">
+                        <span class="font-semibold truncate block">${name}</span>
+                        <span class="text-xs text-secondary-text-color">${size}</span>
+                    </div>
+                `;
+                fileListEl.appendChild(itemEl);
+            });
+
+            hideFileContent(); // S'assurer que la vue de contenu est cachée
+        }
+
+        /**
+         * Affiche le contenu d'un fichier texte dans une modale.
+         * @param {string} title - Nom du fichier.
+         * @param {string} content - Contenu du fichier.
+         */
+        function showFileContent(title, content) {
+            document.getElementById('file-content-title').textContent = title;
+            document.getElementById('file-content-text').textContent = content;
+            document.getElementById('file-content-view').classList.remove('hidden');
+        }
+
+        /**
+         * Cache la modale du contenu du fichier.
+         */
+        function hideFileContent() {
+             document.getElementById('file-content-view').classList.add('hidden');
+        }
+
+
+        // --- CORE OS FUNCTIONS ---
+
+        /**
+         * Configure les écouteurs d'événements pour l'application Navigateur.
+         * (Exemple de fonction sans paramètre)
+         */
+        function setupBrowserListeners() {
+            const searchButton = document.getElementById('browser-search-button');
+            const queryInput = document.getElementById('browser-query-input');
+
+            if (searchButton) {
+                searchButton.addEventListener('click', handleBrowserSearch);
+            }
+            
+            if (queryInput) {
+                 queryInput.addEventListener('keydown', (event) => {
+                     if (event.key === 'Enter') {
+                         handleBrowserSearch();
+                     }
+                 });
+            }
+        }
+
+        /**
+         * Initialise Firebase et authentifie l'utilisateur.
+         */
+        async function initFirebase() {
+            if (!firebaseConfig) {
+                console.error("Firebase config is missing. Data persistence will not work.");
+                return;
+            }
+
+            try {
+                setLogLevel('error'); 
+                app = initializeApp(firebaseConfig);
+                auth = getAuth(app);
+                db = getFirestore(app);
+
+                // Authentification
+                if (initialAuthToken) {
+                    await signInWithCustomToken(auth, initialAuthToken);
+                } else {
+                    await signInAnonymously(auth);
+                }
+
+                onAuthStateChanged(auth, (user) => {
+                    if (user) {
+                        userId = user.uid;
+                        document.getElementById('user-id-display').textContent = userId;
+                        console.log("User authenticated. ID:", userId);
+                        loadInitialState();
+                        setupNotesListener(); // Démarrer l'écoute des notes après l'authentification
+                    } else {
+                        console.log("No user is signed in.");
+                        userId = null;
+                        document.getElementById('user-id-display').textContent = 'Anonyme/Déconnecté';
+                    }
+                });
+
+            } catch (error) {
+                console.error("Firebase initialization or authentication failed:", error);
+                document.getElementById('user-id-display').textContent = `Erreur: ${error.code}`;
+            }
+        }
+
+        /**
+         * Charge l'état initial des paramètres de l'OS depuis Firestore ou utilise les valeurs par défaut.
+         */
+        async function loadInitialState() {
+            if (!db || !userId) return;
+
+            const settingsRef = doc(db, 'artifacts', appId, 'users', userId, 'settings', 'os');
+            try {
+                const settingsDoc = await getDoc(settingsRef);
+                if (settingsDoc.exists()) {
+                    const loadedSettings = settingsDoc.data();
+                    osState.appData.settings = { ...osState.appData.settings, ...loadedSettings };
+                    console.log("Settings loaded from Firestore.");
+                } else {
+                    await setDoc(settingsRef, osState.appData.settings);
+                    console.log("Default settings saved to Firestore.");
+                }
+                
+                updateUIAccordingToAppState(osState.currentApp);
+            } catch (error) {
+                console.error("Error loading OS state:", error);
+                updateUIAccordingToAppState(osState.currentApp);
+            }
+        }
+
+        /**
+         * Sauvegarde l'état des paramètres de l'OS dans Firestore.
+         */
+        async function saveOsState() {
+            if (!db || !userId) return;
+            const settingsRef = doc(db, 'artifacts', appId, 'users', userId, 'settings', 'os');
+            try {
+                await setDoc(settingsRef, osState.appData.settings, { merge: true });
+            } catch (error) {
+                console.error("Error saving OS state:", error);
+            }
+        }
+
+        /**
+         * Met à jour l'interface utilisateur globale (thème, barre d'état) en fonction de l'état de l'OS.
+         */
+        function updateUIAccordingToAppState(newAppId) {
+            const screenEl = document.getElementById('screen');
+            const isDarkMode = osState.appData.settings.darkMode;
+            const isNotificationsActive = osState.appData.settings.notifications;
+
+            // 1. Gérer le thème (Dark/Light mode)
+            if (isDarkMode) {
+                screenEl.setAttribute('data-theme', 'dark');
+                const darkModeToggle = document.getElementById('setting-dark-mode');
+                if(darkModeToggle) darkModeToggle.checked = true; 
+            } else {
+                screenEl.setAttribute('data-theme', 'light');
+                const darkModeToggle = document.getElementById('setting-dark-mode');
+                if(darkModeToggle) darkModeToggle.checked = false;
+            }
+
+            // 2. Mettre à jour la barre d'état
+            const statusNotifications = document.getElementById('status-notifications');
+            const notificationsToggle = document.getElementById('setting-notifications');
+            if (statusNotifications) statusNotifications.textContent = isNotificationsActive ? '🔔' : '🔕';
+            if (notificationsToggle) notificationsToggle.checked = isNotificationsActive;
+
+
+            // 3. Gérer la navigation entre applications
+            document.querySelectorAll('.app-view').forEach(view => {
+                view.classList.add('hidden');
+                view.classList.remove('active');
+            });
+
+            const targetApp = document.getElementById(newAppId === 'home' ? 'home-screen' : `app-${newAppId}`);
+            if (targetApp) {
+                 targetApp.classList.remove('hidden');
+                 setTimeout(() => {
+                    targetApp.classList.add('active');
+                }, 10);
+            }
+
+            // 4. Mettre à jour les UIs spécifiques
+            if (newAppId === 'settings') {
+                updateSettingsUI();
+            } else if (newAppId === 'notes') {
+                updateNotesUI(); 
+            } else if (newAppId === 'files') {
+                updateFilesUI();
+            }
+
+            // 5. Appliquer le fond d'écran
+            applyWallpaper();
+        }
+
+        /**
+         * Navigue vers une application ou l'écran d'accueil.
+         * @param {string} appId - L'ID de l'application ('home', 'settings', 'notes', 'browser', 'files', 'phone').
+         */
+        function navigateToApp(appId) {
+            osState.currentApp = appId;
+            updateUIAccordingToAppState(appId);
+        }
+
+        /**
+         * Simule le bouton "Retour" en gérant l'historique de l'OS (Retour à l'accueil) ou la navigation interne (Fichiers).
+         */
+        function navigateBack() {
+            if (osState.currentApp === 'files' && currentFilePath.length > 0) {
+                navigateBackFile(); // Logique interne pour l'app Fichiers
+            } else if (osState.currentApp !== 'home') {
+                navigateToApp('home'); // Retour à l'accueil pour les autres apps
+            } else {
+                displayMessage("Navigation", "Déjà sur l'écran d'accueil.", "info");
+            }
+        }
+
+        /**
+         * Affiche un message de notification (toast) temporaire.
+         * @param {string} title - Titre du message.
+         * @param {string} content - Contenu du message.
+         * @param {'success'|'error'|'info'} type - Type de message.
+         */
+        function displayMessage(title, content, type) {
+            const messageBox = document.getElementById('message-box');
+            let bgColor, icon;
+
+            switch (type) {
+                case 'success':
+                    bgColor = 'bg-green-600';
+                    icon = '✅';
+                    break;
+                case 'error':
+                    bgColor = 'bg-red-600';
+                    icon = '❌';
+                    break;
+                case 'info':
+                default:
+                    bgColor = 'bg-blue-600';
+                    icon = 'ℹ️';
+            }
+
+            messageBox.className = `fixed bottom-14 left-1/2 -translate-x-1/2 p-3 rounded-xl shadow-xl text-sm text-white ${bgColor} transition-opacity duration-300 z-50`;
+            messageBox.innerHTML = `<strong>${icon} ${title}</strong>: ${content}`;
+            messageBox.style.opacity = 1;
+            messageBox.style.pointerEvents = 'auto';
+
+            clearTimeout(messageBox.timer);
+            messageBox.timer = setTimeout(() => {
+                messageBox.style.opacity = 0;
+                messageBox.style.pointerEvents = 'none';
+            }, 3000);
+        }
+
+        /**
+         * Met à jour l'heure dans la barre de statut.
+         */
+        function updateTime() {
+            const now = new Date();
+            const timeString = now.toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' });
+            document.getElementById('status-time').textContent = timeString;
+        }
+        setInterval(updateTime, 1000);
+        updateTime(); // Appel initial
+
+        // --- SETTINGS APP LOGIC ---
+
+        /**
+         * Gère le changement d'un paramètre simple (Dark Mode, Notifications).
+         * @param {string} settingKey - La clé du paramètre dans osState.appData.settings.
+         * @param {boolean} value - La nouvelle valeur du paramètre.
+         */
+        function handleSettingChange(settingKey, value) {
+            osState.appData.settings[settingKey] = value;
+            saveOsState();
+            updateUIAccordingToAppState(osState.currentApp);
+
+            const message = settingKey === 'darkMode' ? (value ? 'Mode Sombre activé.' : 'Mode Clair activé.') : (value ? 'Notifications activées.' : 'Notifications désactivées.');
+            displayMessage("Paramètres", message, 'success');
+        }
+        
+        // Modal de confirmation pour la réinitialisation
+        function showConfirmReset() {
+            document.getElementById('reset-confirm-modal').classList.remove('hidden');
+        }
+
+        function hideConfirmReset() {
+            document.getElementById('reset-confirm-modal').classList.add('hidden');
+        }
+
+        /**
+         * Réinitialise les données des applications (Notes + Paramètres) dans Firestore.
+         */
+        async function resetAppData() {
+            if (!db || !userId) {
+                displayMessage('Erreur', 'Impossible de se connecter à la base de données.', 'error');
+                return;
+            }
+
+            const batch = writeBatch(db);
+
+            try {
+                // 1. Réinitialiser les paramètres
+                const defaultSettings = { darkMode: true, notifications: true, wallpaper: 'default' };
+                osState.appData.settings = defaultSettings;
+                const settingsRef = doc(db, 'artifacts', appId, 'users', userId, 'settings', 'os');
+                batch.set(settingsRef, defaultSettings);
+
+                // 2. Supprimer toutes les notes
+                const notesCollectionRef = collection(db, 'artifacts', appId, 'users', userId, 'notes');
+                const notesSnapshot = await getDocs(notesCollectionRef);
+                notesSnapshot.docs.forEach(d => {
+                    batch.delete(d.ref);
+                });
+
+                await batch.commit();
+
+                // Mettre à jour l'UI après la réinitialisation
+                displayMessage('Réinitialisation', 'Toutes les données des applications ont été réinitialisées.', 'success');
+                updateUIAccordingToAppState(osState.currentApp);
+
+            } catch (error) {
+                console.error("Error resetting app data:", error);
+                displayMessage('Erreur', 'Échec de la réinitialisation des données.', 'error');
+            }
+        }
+
+        // Mapping des URLs de fonds d'écran
+        const wallpaperUrls = {
+            mountain: "url('https://images.unsplash.com/photo-1506744038136-46273834b3fb?auto=format&fit=crop&w=375&h=812&q=80')",
+            forest: "url('https://images.unsplash.com/photo-1502082553048-f009c37129b9?auto=format&fit=crop&w=375&h=812&q=80')",
+            beach: "url('https://images.unsplash.com/photo-1507525428034-b723cf961d3e?auto=format&fit=crop&w=375&h=812&q=80')",
+        };
+        
+        /**
+         * Met à jour l'UI des paramètres, y compris la section Fonds d'écran.
+         */
+        function updateSettingsUI() {
+            // Mettre à jour les interrupteurs
+            const darkModeToggle = document.getElementById('setting-dark-mode');
+            const notificationsToggle = document.getElementById('setting-notifications');
+            if (darkModeToggle) darkModeToggle.checked = osState.appData.settings.darkMode;
+            if (notificationsToggle) notificationsToggle.checked = osState.appData.settings.notifications;
+            
+            const settingsApp = document.getElementById('app-settings');
+            const container = document.getElementById('wallpaper-settings-container');
+
+            if (!settingsApp || !container) return;
+
+            // Créer/Mettre à jour la section Fonds d'écran
+            let wallpaperSection = document.getElementById('wallpaper-settings-section');
+
+            if (!wallpaperSection) {
+                wallpaperSection = document.createElement('li');
+                wallpaperSection.id = 'wallpaper-settings-section';
+                wallpaperSection.className = 'flex flex-col p-4';
+                wallpaperSection.innerHTML = `
+                    <span class="font-semibold mb-2 text-gray-900 dark:text-gray-100">Fond d'écran</span>
+                    <div class="flex space-x-3">
+                        <button data-wallpaper="default" title="Défaut" class="w-16 h-10 rounded-lg border-2 focus:outline-none" style="background: linear-gradient(45deg, #3b82f6, #2563eb);"></button>
+                        <button data-wallpaper="mountain" title="Montagne" class="w-16 h-10 rounded-lg border-2 focus:outline-none" style="background-image: ${wallpaperUrls.mountain}; background-size: cover; background-position: center;"></button>
+                        <button data-wallpaper="forest" title="Forêt" class="w-16 h-10 rounded-lg border-2 focus:outline-none" style="background-image: ${wallpaperUrls.forest}; background-size: cover; background-position: center;"></button>
+                        <button data-wallpaper="beach" title="Plage" class="w-16 h-10 rounded-lg border-2 focus:outline-none" style="background-image: ${wallpaperUrls.beach}; background-size: cover; background-position: center;"></button>
+                    </div>
+                `;
+
+                container.appendChild(wallpaperSection);
+
+                // Ajouter écouteurs clic
+                wallpaperSection.querySelectorAll('button').forEach((btn) => {
+                    btn.addEventListener('click', () => {
+                        changeWallpaper(btn.dataset.wallpaper);
+                    });
+                });
+            }
+
+            // Mettre à jour la sélection visuelle (bordure bleue)
+            wallpaperSection.querySelectorAll('button').forEach((btn) => {
+                if (btn.dataset.wallpaper === osState.appData.settings.wallpaper) {
+                    btn.classList.add('border-blue-600', 'ring-4', 'ring-blue-300');
+                    btn.classList.remove('border-transparent', 'border-gray-300', 'dark:border-gray-600');
+                } else {
+                    btn.classList.remove('border-blue-600', 'ring-4', 'ring-blue-300');
+                    btn.classList.add('border-gray-300', 'dark:border-gray-600');
+                }
+            });
+        }
+
+        /**
+         * Change le fond d'écran et déclenche la sauvegarde de l'état.
+         */
+        function changeWallpaper(wallpaperId) {
+            osState.appData.settings.wallpaper = wallpaperId;
+            applyWallpaper();
+            saveOsState();
+            updateSettingsUI();
+            displayMessage(
+                "Fond d'écran",
+                `Fond d'écran changé.`,
+                'success'
+            );
+        }
+
+        /**
+         * Applique le fond d'écran sur #screen.
+         */
+        function applyWallpaper() {
+            const screenEl = document.getElementById('screen');
+            const wp = osState.appData.settings.wallpaper || 'default';
+            const isDarkMode = osState.appData.settings.darkMode;
+            const statusBar = document.getElementById('status-bar');
+
+            // Réinitialiser les styles
+            screenEl.style.backgroundImage = '';
+            screenEl.style.backgroundColor = '';
+            
+            // Masquer les couleurs de fond de l'OS lorsque l'image est utilisée
+            if (wp !== 'default') {
+                screenEl.style.backgroundImage = wallpaperUrls[wp];
+                // Texte de la barre de statut en blanc sur les fonds d'écran
+                if (statusBar) statusBar.style.color = 'white';
+            } else {
+                // Fond par défaut: couleur unie basée sur le mode
+                screenEl.style.backgroundColor = isDarkMode ? '#1f2937' : '#ffffff';
+                // Texte de la barre de statut basé sur le thème
+                if (statusBar) statusBar.style.color = isDarkMode ? 'white' : 'black';
+            }
+        }
+
+
+        // --- NOTES APP LOGIC (Firestore) ---
+
+        /**
+         * Définit l'écouteur de la collection de notes en temps réel.
+         */
+        function setupNotesListener() {
+            if (!db || !userId) return;
+
+            if (unsubscribeNotes) {
+                unsubscribeNotes(); // Annuler l'ancienne écoute si elle existe
+            }
+
+            const notesCollectionRef = collection(db, 'artifacts', appId, 'users', userId, 'notes');
+            const q = query(notesCollectionRef); 
+
+            unsubscribeNotes = onSnapshot(q, (snapshot) => {
+                const notesArray = [];
+                snapshot.forEach((doc) => {
+                    notesArray.push({ id: doc.id, ...doc.data() });
+                });
+                
+                // Trier par date de création (du plus récent au plus ancien)
+                notesArray.sort((a, b) => {
+                    const timeA = b.createdAt ? (b.createdAt.seconds || 0) : 0;
+                    const timeB = a.createdAt ? (a.createdAt.seconds || 0) : 0;
+                    return timeA - timeB;
+                }); 
+
+                osState.appData.notes = notesArray;
+                updateNotesUI();
+                console.log("Notes loaded/updated from Firestore:", notesArray.length);
+            }, (error) => {
+                console.error("Error setting up notes listener:", error);
+                displayMessage("Erreur Notes", "Impossible de charger les notes en temps réel.", "error");
+            });
+        }
+
+        /**
+         * Met à jour l'interface utilisateur de la liste des notes.
+         */
+        function updateNotesUI() {
+            const notesListEl = document.getElementById('notes-list');
+            if (!notesListEl) return;
+            notesListEl.innerHTML = ''; // Vider la liste
+
+            if (osState.appData.notes.length === 0) {
+                notesListEl.innerHTML = `
+                    <div class="p-6 text-center text-gray-500 dark:text-gray-400">
+                        <svg xmlns="http://www.w3.org/2000/svg" class="h-10 w-10 mx-auto mb-2" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+                            <path stroke-linecap="round" stroke-linejoin="round" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
+                        </svg>
+                        <p class="font-semibold">Aucune note pour le moment.</p>
+                        <p class="text-sm">Appuyez sur le + pour en créer une.</p>
+                    </div>
+                `;
+                return;
+            }
+
+            osState.appData.notes.forEach(note => {
+                const noteEl = document.createElement('div');
+                const truncatedContent = note.content.substring(0, 100) + (note.content.length > 100 ? '...' : '');
+                
+                let dateString = "Date inconnue";
+                if (note.createdAt && note.createdAt.seconds) {
+                    const date = new Date(note.createdAt.seconds * 1000);
+                    dateString = date.toLocaleDateString('fr-FR', { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' });
+                }
+
+                noteEl.className = 'bg-white dark:bg-gray-700 p-4 rounded-xl shadow-md flex justify-between items-start cursor-pointer transition hover:shadow-lg';
+                noteEl.innerHTML = `
+                    <div onclick="showNoteEditor('${note.id}')" class="flex-grow min-w-0 pr-4">
+                        <h4 class="text-lg font-semibold truncate text-gray-900 dark:text-white">${note.title || 'Note sans titre'}</h4>
+                        <p class="text-xs text-gray-400 mb-2">${dateString}</p>
+                        <p class="text-sm text-gray-600 dark:text-gray-300 break-words">${truncatedContent}</p>
+                    </div>
+                    <button 
+                        onclick="deleteNote('${note.id}')" 
+                        class="flex-shrink-0 p-2 ml-2 text-red-500 rounded-full hover:bg-gray-100 dark:hover:bg-gray-600 transition"
+                        title="Supprimer la note"
+                    >
+                        <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+                            <path stroke-linecap="round" stroke-linejoin="round" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                        </svg>
+                    </button>
+                `;
+                notesListEl.appendChild(noteEl);
+            });
+        }
+
+        let editingNoteId = null;
+
+        /**
+         * Affiche l'éditeur de note.
+         * @param {string} [id] - L'ID de la note à éditer. Si non spécifié, crée une nouvelle note.
+         */
+        function showNoteEditor(id = null) {
+            editingNoteId = id;
+            const modal = document.getElementById('note-editor-modal');
+            const titleInput = document.getElementById('note-editor-input-title');
+            const contentInput = document.getElementById('note-editor-input-content');
+            const modalTitle = document.getElementById('note-editor-title');
+            
+            titleInput.value = '';
+            contentInput.value = '';
+
+            if (id) {
+                const note = osState.appData.notes.find(n => n.id === id);
+                if (note) {
+                    titleInput.value = note.title || '';
+                    contentInput.value = note.content || '';
+                    modalTitle.textContent = 'Modifier la Note';
+                }
+            } else {
+                modalTitle.textContent = 'Nouvelle Note';
+            }
+
+            modal.classList.remove('hidden');
+            titleInput.focus();
+        }
+
+        /**
+         * Cache l'éditeur de note.
+         */
+        function hideNoteEditor() {
+            document.getElementById('note-editor-modal').classList.add('hidden');
+            editingNoteId = null;
+        }
+
+        /**
+         * Enregistre ou met à jour une note dans Firestore.
+         */
+        async function saveNote() {
+            if (!db || !userId) {
+                displayMessage('Erreur', 'Impossible de se connecter à la base de données.', 'error');
+                return;
+            }
+
+            const title = document.getElementById('note-editor-input-title').value.trim() || 'Note sans titre';
+            const content = document.getElementById('note-editor-input-content').value.trim();
+
+            if (!content) {
+                displayMessage('Notes', 'Le contenu de la note ne peut pas être vide.', 'info');
+                return;
+            }
+
+            const notesCollectionRef = collection(db, 'artifacts', appId, 'users', userId, 'notes');
+            const noteData = {
+                title: title,
+                content: content,
+                updatedAt: serverTimestamp(),
+            };
+
+            try {
+                if (editingNoteId) {
+                    // Mise à jour
+                    const docRef = doc(notesCollectionRef, editingNoteId);
+                    await updateDoc(docRef, noteData);
+                    displayMessage('Notes', 'Note mise à jour avec succès.', 'success');
+                } else {
+                    // Nouvelle note
+                    noteData.createdAt = serverTimestamp();
+                    await addDoc(notesCollectionRef, noteData);
+                    displayMessage('Notes', 'Nouvelle note créée avec succès.', 'success');
+                }
+                hideNoteEditor();
+            } catch (error) {
+                console.error("Error saving note:", error);
+                displayMessage('Erreur Notes', 'Échec de la sauvegarde de la note.', 'error');
+            }
+        }
+
+        /**
+         * Supprime une note de Firestore.
+         * @param {string} id - L'ID de la note à supprimer.
+         */
+        async function deleteNote(id) {
+            if (!db || !userId) {
+                displayMessage('Erreur', 'Impossible de se connecter à la base de données.', 'error');
+                return;
+            }
+            
+            const notesCollectionRef = collection(db, 'artifacts', appId, 'users', userId, 'notes');
+            try {
+                const docRef = doc(notesCollectionRef, id);
+                await deleteDoc(docRef);
+                displayMessage('Notes', 'Note supprimée avec succès.', 'success');
+            } catch (error) {
+                console.error("Error deleting note:", error);
+                displayMessage('Erreur Notes', 'Échec de la suppression de la note.', 'error');
+            }
+        }
+        
+        // --- BROWSER APP LOGIC (Gemini API) ---
+        
+        /**
+         * Fonction pour effectuer l'appel à l'API Gemini avec backoff exponentiel.
+         * @param {object} payload - La charge utile de l'API.
+         * @param {number} maxRetries - Nombre maximum de tentatives.
+         * @returns {Promise<object>} La réponse JSON de l'API.
+         */
+        async function fetchWithBackoff(payload, maxRetries = 5) {
+            let attempt = 0;
+            while (attempt < maxRetries) {
+                try {
+                    const response = await fetch(browserApiUrl + browserApiKey, {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify(payload)
+                    });
+
+                    if (response.ok) {
+                        return await response.json();
+                    } else if (response.status === 429 || response.status >= 500) {
+                        attempt++;
+                        const delay = Math.pow(2, attempt) * 1000 + Math.random() * 1000;
+                        if (attempt < maxRetries) {
+                             await new Promise(resolve => setTimeout(resolve, delay));
+                        } else {
+                            throw new Error(`Échec de l'appel API après ${maxRetries} tentatives.`);
+                        }
+                    } else {
+                        const errorBody = await response.json();
+                        throw new Error(`Erreur HTTP ${response.status}: ${JSON.stringify(errorBody)}`);
+                    }
+                } catch (error) {
+                    if (attempt === maxRetries) {
+                        throw error;
+                    }
+                    attempt++;
+                    const delay = Math.pow(2, attempt) * 1000 + Math.random() * 1000;
+                    await new Promise(resolve => setTimeout(resolve, delay));
+                }
+            }
+        }
+
+        /**
+         * Gère la recherche et l'affichage des résultats pour l'application Navigateur.
+         */
+        async function handleBrowserSearch() {
+            const queryInput = document.getElementById('browser-query-input');
+            const searchButton = document.getElementById('browser-search-button');
+            const messageArea = document.getElementById('browser-message-area');
+            const resultsArea = document.getElementById('browser-results-area');
+            const responseText = document.getElementById('browser-response-text');
+            const sourcesList = document.getElementById('browser-sources-list');
+            
+            if (!queryInput || !searchButton || !messageArea || !resultsArea || !responseText || !sourcesList) return;
+
+
+            const query = queryInput.value.trim();
+            if (!query) {
+                messageArea.innerHTML = '<span class="text-red-500 dark:text-red-400">Veuillez entrer une requête de recherche.</span>';
+                resultsArea.classList.add('hidden');
+                return;
+            }
+
+            // --- UI: Démarrer le chargement ---
+            messageArea.innerHTML = `<span class="text-blue-600 dark:text-blue-400 flex items-center justify-center">
+                                        <div class="spinner mr-2 block"></div>
+                                        Chargement...
+                                    </span>`;
+            resultsArea.classList.add('hidden');
+            responseText.innerHTML = '';
+            sourcesList.innerHTML = '';
+            searchButton.disabled = true;
+            queryInput.disabled = true;
+
+            const systemPrompt = "Vous êtes un navigateur de recherche utile et concis. Fournissez la réponse demandée de manière claire et bien structurée, en utilisant les sources fournies par la recherche Google.";
+
+            const payload = {
+                contents: [{ parts: [{ text: query }] }],
+                tools: [{ "google_search": {} }],
+                systemInstruction: {
+                    parts: [{ text: systemPrompt }]
+                },
+            };
+
+            try {
+                const result = await fetchWithBackoff(payload);
+                const candidate = result.candidates?.[0];
+
+                if (candidate && candidate.content?.parts?.[0]?.text) {
+                    const text = candidate.content.parts[0].text;
+                    responseText.innerHTML = text.replace(/\n/g, '<br>'); 
+
+                    // --- Extraction des sources ---
+                    let sources = [];
+                    const groundingMetadata = candidate.groundingMetadata;
+                    if (groundingMetadata && groundingMetadata.groundingAttributions) {
+                        sources = groundingMetadata.groundingAttributions
+                            .map(attribution => ({
+                                uri: attribution.web?.uri,
+                                title: attribution.web?.title,
+                            }))
+                            .filter(source => source.uri && source.title);
+                    }
+
+                    // --- Affichage des sources ---
+                    if (sources.length > 0) {
+                        sources.forEach((source, index) => {
+                            const li = document.createElement('li');
+                            li.innerHTML = `
+                                <a href="${source.uri}" target="_blank" rel="noopener noreferrer" class="hover:underline flex items-start">
+                                    <span class="font-bold mr-2 text-gray-500 dark:text-gray-400">${index + 1}.</span>
+                                    <span>${source.title}</span>
+                                </a>`;
+                            sourcesList.appendChild(li);
+                        });
+                    } else {
+                         const li = document.createElement('li');
+                         li.textContent = "Aucune source de recherche spécifique trouvée.";
+                         sourcesList.appendChild(li);
+                    }
+
+                    // --- UI: Afficher les résultats ---
+                    messageArea.innerHTML = '';
+                    resultsArea.classList.remove('hidden');
+
+                } else {
+                    responseText.innerHTML = "Désolé, je n'ai pas pu obtenir de réponse pour cette requête.";
+                    resultsArea.classList.remove('hidden');
+                    messageArea.innerHTML = '';
+                }
+
+            } catch (error) {
+                console.error("Erreur lors de l'appel à l'API du Navigateur:", error);
+                messageArea.innerHTML = `<span class="text-red-500 dark:text-red-400">
+                                            Une erreur s'est produite lors de la recherche.
+                                        </span>`;
+                resultsArea.classList.add('hidden');
+            } finally {
+                // --- UI: Terminer le chargement ---
+                searchButton.disabled = false;
+                queryInput.disabled = false;
+            }
+        }
+        
+        // --- INITIALIZATION ---
+
+        // Exposer les fonctions au scope global pour les gestionnaires d'événements inline
+        window.navigateToApp = navigateToApp;
+        window.navigateBack = navigateBack;
+        window.displayMessage = displayMessage;
+        window.handleSettingChange = handleSettingChange;
+        window.showConfirmReset = showConfirmReset;
+        window.hideConfirmReset = hideConfirmReset;
+        window.resetAppData = resetAppData;
+        window.showNoteEditor = showNoteEditor;
+        window.hideNoteEditor = hideNoteEditor;
+        window.saveNote = saveNote;
+        window.deleteNote = deleteNote;
+        window.changeWallpaper = changeWallpaper;
+        window.handleBrowserSearch = handleBrowserSearch; 
+        window.navigateToFile = navigateToFile; // Nouveau
+        window.navigateBackFile = navigateBackFile; // Nouveau
+        window.showFileContent = showFileContent; // Nouveau
+        window.hideFileContent = hideFileContent; // Nouveau
+        
+        // Lancement de l'initialisation au chargement de la fenêtre
+        window.onload = function () {
+            initFirebase();
+            setupBrowserListeners(); 
+        };
+
+    </script>
+</body>
+</html>
