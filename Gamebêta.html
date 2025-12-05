@@ -1,0 +1,662 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>L'Épopée du Pixel - Deluxe</title>
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Press+Start+2P&display=swap');
+
+        body {
+            margin: 0;
+            padding: 0;
+            background-color: #111;
+            overflow: hidden;
+            font-family: 'Press Start 2P', cursive;
+            touch-action: none;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            height: 100vh;
+        }
+
+        #game-container {
+            position: relative;
+            width: 100%;
+            height: 100%;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            background: #000;
+        }
+
+        canvas {
+            image-rendering: pixelated;
+            box-shadow: 0 0 30px rgba(0,0,0,0.8);
+            border: 4px solid #333;
+            border-radius: 4px;
+        }
+
+        #ui-layer {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            pointer-events: none;
+            display: flex;
+            flex-direction: column;
+            justify-content: space-between;
+        }
+
+        #hud {
+            padding: 20px;
+            display: flex;
+            justify-content: space-between;
+            color: white;
+            text-shadow: 2px 2px 0 #000, -1px -1px 0 #000;
+            font-size: 14px;
+            width: 90%;
+            align-self: center;
+            background: rgba(0,0,0,0.3);
+            border-radius: 0 0 10px 10px;
+            padding-bottom: 10px;
+        }
+        
+        #weapon-display {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+        
+        #weapon-icon {
+            font-size: 20px;
+        }
+
+        #mobile-controls {
+            pointer-events: auto;
+            display: flex;
+            justify-content: space-between;
+            padding: 20px;
+            padding-bottom: 40px;
+            opacity: 0.8;
+        }
+
+        .control-group {
+            display: flex;
+            gap: 20px;
+        }
+
+        .btn {
+            width: 65px;
+            height: 65px;
+            background: rgba(255, 255, 255, 0.1);
+            border: 2px solid rgba(255, 255, 255, 0.4);
+            border-radius: 50%;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            color: white;
+            font-size: 28px;
+            user-select: none;
+            box-shadow: 0 4px 6px rgba(0,0,0,0.3);
+            backdrop-filter: blur(2px);
+        }
+
+        .btn:active {
+            background: rgba(255, 255, 255, 0.3);
+            transform: scale(0.92);
+        }
+
+        .btn-action {
+            background: rgba(220, 50, 50, 0.2);
+            border-color: rgba(255, 100, 100, 0.5);
+        }
+
+        .btn-jump {
+            background: rgba(50, 100, 255, 0.2);
+            border-color: rgba(100, 150, 255, 0.5);
+        }
+
+        #screens {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: rgba(0,0,0,0.85);
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+            align-items: center;
+            color: white;
+            text-align: center;
+            pointer-events: auto;
+            z-index: 100;
+            backdrop-filter: blur(5px);
+        }
+
+        #notification-area {
+            position: absolute;
+            top: 15%;
+            width: 100%;
+            text-align: center;
+            pointer-events: none;
+            display: none;
+            z-index: 50;
+            animation: bounceIn 0.5s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+        }
+
+        .notif-text {
+            font-size: 16px;
+            color: #FFD700;
+            text-shadow: 2px 2px 0 #000;
+            background: rgba(0,0,0,0.7);
+            border: 2px solid #FFD700;
+            padding: 15px 25px;
+            display: inline-block;
+            border-radius: 10px;
+            box-shadow: 0 5px 15px rgba(0,0,0,0.5);
+        }
+
+        @keyframes bounceIn {
+            0% { transform: scale(0); opacity: 0; }
+            60% { transform: scale(1.1); opacity: 1; }
+            100% { transform: scale(1); }
+        }
+
+        .hidden { display: none !important; }
+
+        h1 { 
+            font-size: 32px; 
+            color: #FFD700; 
+            margin-bottom: 20px; 
+            text-shadow: 4px 4px 0 #8B4513;
+            line-height: 1.5;
+        }
+        
+        p { 
+            font-size: 12px; 
+            line-height: 1.8; 
+            color: #DDD; 
+            max-width: 80%; 
+            margin: 0 auto 30px auto; 
+            text-shadow: 1px 1px 0 #000;
+        }
+        
+        .start-btn {
+            padding: 15px 40px;
+            background: linear-gradient(to bottom, #4CAF50, #2E7D32);
+            color: white;
+            border: 2px solid #fff;
+            font-family: inherit;
+            font-size: 18px;
+            cursor: pointer;
+            border-radius: 8px;
+            box-shadow: 0 6px 0 #1B5E20, 0 10px 10px rgba(0,0,0,0.4);
+            transition: transform 0.1s, box-shadow 0.1s;
+        }
+
+        .start-btn:active {
+            transform: translateY(4px);
+            box-shadow: 0 2px 0 #1B5E20, 0 4px 4px rgba(0,0,0,0.4);
+        }
+
+        @media (min-width: 800px) {
+            #mobile-controls { display: none; }
+        }
+    </style>
+</head>
+<body>
+
+<div id="game-container">
+    <canvas id="gameCanvas"></canvas>
+
+    <div id="ui-layer">
+        <div id="hud">
+            <div>
+                LVL <span id="level-display">1</span>
+                <div id="weapon-display">
+                    <span id="weapon-icon">🗡️</span>
+                    <span id="weapon-name">Épée</span>
+                </div>
+            </div>
+            <div>VIE: <span id="hp-display">❤️❤️❤️</span></div>
+        </div>
+
+        <div id="notification-area">
+            <div class="notif-text" id="notif-msg">NOUVELLE ARME !</div>
+        </div>
+
+        <div id="mobile-controls">
+            <div class="control-group">
+                <div class="btn" id="btn-left">◀</div>
+                <div class="btn" id="btn-right">▶</div>
+            </div>
+            <div class="control-group">
+                <div class="btn btn-action" id="btn-attack">⚔️</div>
+                <div class="btn btn-jump" id="btn-jump">▲</div>
+            </div>
+        </div>
+    </div>
+
+    <div id="screens">
+        <h1 id="screen-title">L'ÉPOPÉE<br>DU PIXEL DX</h1>
+        <p id="screen-desc">
+            NOUVEAU : Arcs, Bombes et Graphismes HD !<br>
+            Tuez les ennemis pour récupérer des cœurs.<br><br>
+            Contrôles : Flèches + Espace/Z
+        </p>
+        <button class="start-btn" id="start-btn">JOUER</button>
+    </div>
+</div>
+
+<script>
+/**
+ * MOTEUR GRAPHIQUE & CONFIG
+ */
+
+const canvas = document.getElementById('gameCanvas');
+const ctx = canvas.getContext('2d');
+
+const GAME_WIDTH = 640;
+const GAME_HEIGHT = 360;
+const GRAVITY = 0.6;
+const FRICTION = 0.8;
+
+// Génération de Textures procédurales
+const textures = {
+    ground: null,
+    wall: null
+};
+
+function generateTextures() {
+    // Sol (Herbe + Terre)
+    const cGround = document.createElement('canvas');
+    cGround.width = 40; cGround.height = 40;
+    const ctxG = cGround.getContext('2d');
+    ctxG.fillStyle = '#654321';
+    ctxG.fillRect(0, 0, 40, 40);
+    // Cailloux
+    ctxG.fillStyle = '#503010';
+    ctxG.fillRect(5, 10, 5, 5);
+    ctxG.fillRect(25, 25, 6, 6);
+    // Herbe dessus
+    ctxG.fillStyle = '#4CAF50';
+    ctxG.fillRect(0, 0, 40, 8);
+    ctxG.fillStyle = '#388E3C';
+    ctxG.fillRect(0, 8, 40, 2);
+    textures.ground = ctx.createPattern(cGround, 'repeat');
+
+    // Mur (Briques)
+    const cWall = document.createElement('canvas');
+    cWall.width = 30; cWall.height = 30;
+    const ctxW = cWall.getContext('2d');
+    ctxW.fillStyle = '#7f8c8d';
+    ctxW.fillRect(0, 0, 30, 30);
+    ctxW.strokeStyle = '#555';
+    ctxW.lineWidth = 2;
+    ctxW.beginPath();
+    ctxW.moveTo(0, 15); ctxW.lineTo(30, 15);
+    ctxW.moveTo(15, 0); ctxW.lineTo(15, 15);
+    ctxW.moveTo(7, 15); ctxW.lineTo(7, 30);
+    ctxW.stroke();
+    textures.wall = ctx.createPattern(cWall, 'repeat');
+}
+generateTextures();
+
+function resize() {
+    let scale = Math.min(window.innerWidth / GAME_WIDTH, window.innerHeight / GAME_HEIGHT);
+    canvas.width = GAME_WIDTH;
+    canvas.height = GAME_HEIGHT;
+    canvas.style.width = (GAME_WIDTH * scale) + 'px';
+    canvas.style.height = (GAME_HEIGHT * scale) + 'px';
+    ctx.imageSmoothingEnabled = false;
+}
+window.addEventListener('resize', resize);
+resize();
+
+// Input
+const keys = { left: false, right: false, up: false, attack: false };
+
+window.addEventListener('keydown', e => {
+    if(e.code === 'ArrowLeft') keys.left = true;
+    if(e.code === 'ArrowRight') keys.right = true;
+    if(e.code === 'Space' || e.code === 'ArrowUp') keys.up = true;
+    if(e.code === 'KeyZ' || e.code === 'KeyX') keys.attack = true;
+});
+
+window.addEventListener('keyup', e => {
+    if(e.code === 'ArrowLeft') keys.left = false;
+    if(e.code === 'ArrowRight') keys.right = false;
+    if(e.code === 'Space' || e.code === 'ArrowUp') keys.up = false;
+    if(e.code === 'KeyZ' || e.code === 'KeyX') keys.attack = false;
+});
+
+const setupTouch = (id, key) => {
+    const el = document.getElementById(id);
+    el.addEventListener('touchstart', (e) => { e.preventDefault(); keys[key] = true; });
+    el.addEventListener('touchend', (e) => { e.preventDefault(); keys[key] = false; });
+};
+setupTouch('btn-left', 'left');
+setupTouch('btn-right', 'right');
+setupTouch('btn-jump', 'up');
+setupTouch('btn-attack', 'attack');
+
+/**
+ * ARMES ET PROJECTILES
+ */
+
+const WEAPONS = {
+    SWORD: { name: "Épée", type: 'melee', damage: 1, range: 40, cd: 25, color: '#DDD', icon: '🗡️' },
+    BOW: { name: "Arc", type: 'range', damage: 1, speed: 10, cd: 40, color: '#8B4513', icon: '🏹' },
+    BOMB: { name: "Bombe", type: 'throw', damage: 3, speed: 6, cd: 60, color: '#333', icon: '💣' }
+};
+
+class Projectile {
+    constructor(x, y, velX, velY, type) {
+        this.x = x;
+        this.y = y;
+        this.velX = velX;
+        this.velY = velY;
+        this.type = type; // 'arrow', 'bomb'
+        this.width = type === 'arrow' ? 20 : 12;
+        this.height = type === 'arrow' ? 4 : 12;
+        this.active = true;
+        this.timer = type === 'bomb' ? 100 : 0; // Fuse for bomb
+        this.angle = 0;
+    }
+
+    update() {
+        if (this.type === 'bomb') {
+            this.velY += 0.3; // Gravity for bomb
+            this.velX *= 0.98;
+            this.timer--;
+            this.angle += 0.2;
+            if (this.timer <= 0) this.explode();
+        } else if (this.type === 'arrow') {
+            this.velY += 0.1; // Slight arc
+            this.angle = Math.atan2(this.velY, this.velX);
+        }
+
+        this.x += this.velX;
+        this.y += this.velY;
+
+        // Collision with platforms
+        platforms.forEach(p => {
+            if (rectIntersect(this, p)) {
+                if (this.type === 'arrow') this.active = false;
+                if (this.type === 'bomb') {
+                    // Bounce
+                    if (Math.abs(this.velY) > 2) this.velY *= -0.6;
+                    else {
+                        this.velY = 0;
+                        this.velX *= 0.8;
+                        this.y = p.y - this.height;
+                    }
+                }
+            }
+        });
+    }
+
+    draw(ctx, camX) {
+        ctx.save();
+        ctx.translate(this.x + this.width/2 - camX, this.y + this.height/2);
+        ctx.rotate(this.angle);
+        
+        if (this.type === 'arrow') {
+            ctx.fillStyle = '#8B4513';
+            ctx.fillRect(-10, -2, 20, 4);
+            ctx.fillStyle = '#EEE'; // Plume
+            ctx.fillRect(-12, -2, 4, 4);
+            ctx.fillStyle = '#555'; // Pointe
+            ctx.beginPath();
+            ctx.moveTo(10, -3); ctx.lineTo(14, 0); ctx.lineTo(10, 3);
+            ctx.fill();
+        } else {
+            // Bomb
+            ctx.fillStyle = '#333';
+            ctx.beginPath(); ctx.arc(0, 0, 8, 0, Math.PI*2); ctx.fill();
+            // Mèche
+            ctx.fillStyle = '#FFF';
+            ctx.fillRect(-2, -10, 4, 4);
+            // Étincelle
+            if (Math.floor(Date.now()/50)%2===0) {
+                ctx.fillStyle = '#FFA500';
+                ctx.fillRect(-2, -14, 4, 4);
+            }
+        }
+        ctx.restore();
+    }
+
+    explode() {
+        this.active = false;
+        createParticles(this.x, this.y, '#FFA500', 30); // Explosion visual
+        
+        // Damage Area
+        const blastRadius = { x: this.x - 40, y: this.y - 40, width: 80, height: 80 };
+        
+        enemies.forEach(e => {
+            if (rectIntersect(blastRadius, e)) {
+                e.takeDamage(3);
+            }
+        });
+        
+        if (boss && boss.active && rectIntersect(blastRadius, boss)) {
+            boss.takeDamage(3);
+        }
+    }
+}
+
+class Pickup {
+    constructor(x, y, type) {
+        this.x = x;
+        this.y = y;
+        this.width = 16;
+        this.height = 16;
+        this.type = type; // 'heart'
+        this.floatY = 0;
+        this.life = 600; // 10 seconds
+    }
+    update() {
+        this.life--;
+        this.floatY = Math.sin(Date.now()/150) * 3;
+    }
+    draw(ctx, camX) {
+        if (this.life < 60 && Math.floor(Date.now()/50)%2===0) return; // Blink
+        const drawY = this.y + this.floatY;
+        
+        if (this.type === 'heart') {
+            ctx.fillStyle = '#E74C3C';
+            ctx.beginPath();
+            // Heart shape
+            const cx = this.x - camX + 8;
+            const cy = drawY + 8;
+            ctx.moveTo(cx, cy + 6);
+            ctx.bezierCurveTo(cx - 8, cy, cx - 8, cy - 8, cx, cy - 8);
+            ctx.bezierCurveTo(cx + 8, cy - 8, cx + 8, cy, cx, cy + 6);
+            ctx.fill();
+            ctx.fillStyle = 'rgba(255,255,255,0.4)';
+            ctx.beginPath(); ctx.arc(cx - 3, cy - 3, 2, 0, Math.PI*2); ctx.fill(); // Shine
+        }
+    }
+}
+
+/**
+ * ENTITÉS AVEC NOUVEAUX GRAPHISMES
+ */
+
+class Entity {
+    constructor(x, y, width, height) {
+        this.x = x;
+        this.y = y;
+        this.width = width;
+        this.height = height;
+        this.velX = 0;
+        this.velY = 0;
+        this.isGrounded = false;
+        this.markedForDeletion = false;
+        this.facingRight = true;
+    }
+    update() {
+        this.velY += GRAVITY;
+        this.x += this.velX;
+        this.y += this.velY;
+    }
+    checkPlatformCollisions(platforms) {
+        this.isGrounded = false;
+        for (let p of platforms) {
+            if (this.x < p.x + p.width && this.x + this.width > p.x &&
+                this.y + this.height > p.y && this.y < p.y + p.height) {
+                if (this.velY > 0 && this.y + this.height - this.velY <= p.y + 10) {
+                    this.y = p.y - this.height;
+                    this.velY = 0;
+                    this.isGrounded = true;
+                }
+            }
+        }
+    }
+}
+
+class Player extends Entity {
+    constructor(x, y) {
+        super(x, y, 30, 44);
+        this.speed = 5;
+        this.jumpForce = -11;
+        this.attackCooldown = 0;
+        this.hp = 3;
+        this.maxHp = 5;
+        this.invincible = 0;
+        this.weapon = WEAPONS.SWORD;
+        
+        this.animTimer = 0;
+        this.walkFrame = 0;
+    }
+
+    equipWeapon(key) {
+        if(WEAPONS[key]) {
+            this.weapon = WEAPONS[key];
+            updateHUD();
+        }
+    }
+
+    heal(amount) {
+        this.hp = Math.min(this.hp + amount, this.maxHp);
+        updateHUD();
+        createParticles(this.x + 15, this.y, '#2ECC71', 10);
+    }
+
+    update(platforms, enemies, boss) {
+        // Move
+        if (keys.left) { this.velX = -this.speed; this.facingRight = false; this.animTimer++; }
+        else if (keys.right) { this.velX = this.speed; this.facingRight = true; this.animTimer++; }
+        else { this.velX *= FRICTION; this.animTimer = 0; }
+
+        if (keys.up && this.isGrounded) { this.velY = this.jumpForce; this.isGrounded = false; }
+
+        super.update();
+        this.checkPlatformCollisions(platforms);
+
+        // Animation frame
+        if (this.animTimer > 5) {
+            this.walkFrame = (this.walkFrame + 1) % 2;
+            this.animTimer = 0;
+        }
+
+        if (this.y > GAME_HEIGHT + 100) this.hp = 0;
+
+        // Attack
+        if (this.attackCooldown > 0) this.attackCooldown--;
+        if (this.invincible > 0) this.invincible--;
+
+        if (keys.attack && this.attackCooldown === 0) {
+            this.attackCooldown = this.weapon.cd;
+            
+            if (this.weapon.type === 'melee') {
+                this.meleeAttack(enemies, boss);
+            } else if (this.weapon.type === 'range') {
+                // Shoot Arrow
+                const vx = this.facingRight ? this.weapon.speed : -this.weapon.speed;
+                projectiles.push(new Projectile(this.x + 15, this.y + 20, vx, -2, 'arrow'));
+            } else if (this.weapon.type === 'throw') {
+                // Throw Bomb
+                const vx = this.facingRight ? this.weapon.speed : -this.weapon.speed;
+                projectiles.push(new Projectile(this.x + 15, this.y + 5, vx, -5, 'bomb'));
+            }
+        }
+    }
+
+    meleeAttack(enemies, boss) {
+        // Visual
+        createParticles(this.x + (this.facingRight ? 30 : 0), this.y + 20, '#FFF', 3);
+        const hitBox = {
+            x: this.facingRight ? this.x + 30 : this.x - 40,
+            y: this.y + 10, width: 40, height: 30
+        };
+
+        let hit = false;
+        enemies.forEach(e => {
+            if (rectIntersect(hitBox, e)) {
+                e.takeDamage(this.weapon.damage);
+                hit = true;
+            }
+        });
+        if (boss && boss.active && rectIntersect(hitBox, boss)) {
+            boss.takeDamage(this.weapon.damage);
+            hit = true;
+        }
+    }
+
+    draw(ctx, camX) {
+        if (this.invincible > 0 && Math.floor(Date.now() / 100) % 2 === 0) return;
+
+        const cx = this.x - camX;
+        const cy = this.y;
+
+        // Legs (Anim)
+        ctx.fillStyle = '#2C3E50'; // Dark Blue Pants
+        if (Math.abs(this.velX) > 0.5 && this.isGrounded) {
+             if (this.walkFrame === 0) {
+                 ctx.fillRect(cx + 4, cy + 30, 8, 14); // Leg 1
+                 ctx.fillRect(cx + 18, cy + 30, 8, 14); // Leg 2
+             } else {
+                 ctx.fillRect(cx + 6, cy + 28, 8, 14); 
+                 ctx.fillRect(cx + 16, cy + 28, 8, 14); 
+             }
+        } else {
+            ctx.fillRect(cx + 8, cy + 30, 6, 14);
+            ctx.fillRect(cx + 18, cy + 30, 6, 14);
+        }
+
+        // Body
+        ctx.fillStyle = '#3498DB'; // Blue Shirt
+        ctx.fillRect(cx + 2, cy + 14, 26, 20);
+        
+        // Head
+        ctx.fillStyle = '#FFD700'; // Skin
+        ctx.fillRect(cx + 2, cy, 26, 16);
+        
+        // Bandana
+        ctx.fillStyle = '#E74C3C'; // Red
+        ctx.fillRect(cx + 1, cy + 2, 28, 4);
+        if (this.facingRight) ctx.fillRect(cx - 2, cy + 2, 4, 4); // Knot
+        else ctx.fillRect(cx + 28, cy + 2, 4, 4);
+
+        // Eyes
+        ctx.fillStyle = '#000';
+        if (this.facingRight) {
+            ctx.fillRect(cx + 18, cy + 6, 3, 3);
+            // Arm with Weapon
+            this.drawWeapon(ctx, cx + 20, cy + 20);
+        } else {
+            ctx.fillRect(cx + 8, cy + 6, 3, 3);
+            this.drawWeapon(ctx, cx - 10, cy + 20);
+        }
+    }
+
+    drawWeapon(ctx, x, y) {
+        // Simple visualization
+        if (this.weapon.name === 'Épée') {
+            ctx.fillStyle = '#BDC3C7';
+            ctx.fillRect(x, y, 16, 4);
+            ctx.fillStyle =
